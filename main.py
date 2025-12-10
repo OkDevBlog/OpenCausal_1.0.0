@@ -15,7 +15,7 @@ NEO4J_URI = os.getenv("NEO4J_URI", "neo4j://127.0.0.1:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "123456Aa@")
 # يُفترض أن مفتاح API صحيح في بيئة التشغيل الفعلية
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")
 
 # تهيئة العميل (مع محاولة تجاوز مشاكل الوكيل/TypeError)
 try:
