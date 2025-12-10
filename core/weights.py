@@ -66,3 +66,46 @@ def update_causal_weight(
         # -------------------------------------------------------------------
         
     return updated_edges
+
+# دالة تحديث الثقة الذاتية
+def update_system_confidence(
+    handler: Neo4jHandler, 
+    success_delta: float, 
+    eta: float = LEARNING_RATE_ETA
+) -> float:
+    """
+    تحديث مستوى الثقة الذاتية للنظام (System_Confidence) بناءً على نتيجة التنفيذ الأخيرة.
+    
+    المدخلات:
+        handler: كائن اتصال Neo4j.
+        success_delta: (+1.0 للنجاح، -0.5 للفشل).
+        eta: معدل التعلم.
+        
+    المخرجات:
+        مستوى الثقة الجديد.
+    """
+    
+    # 1. استرجاع مستوى الثقة الحالي
+    query_read = "MATCH (sc:SelfAwareness {name: 'System_Confidence'}) RETURN sc.current_level AS level LIMIT 1"
+    result = handler.execute_query(query_read)
+    
+    if not result or 'level' not in result[0]:
+        current_level = 0.5 # قيمة افتراضية إذا لم يتم العثور عليها
+    else:
+        current_level = result[0]['level']
+        
+    # 2. تطبيق معادلة التحديث (مثل تحديث الأوزان)
+    new_level = current_level + (eta * success_delta)
+    
+    # 3. دالة القص (Clip)
+    new_level = max(0.0, min(1.0, new_level))
+    
+    # 4. تحديث العقدة في Neo4j
+    query_write = """
+    MATCH (sc:SelfAwareness {name: 'System_Confidence'})
+    SET sc.current_level = $new_level
+    RETURN sc.current_level
+    """
+    handler.execute_query(query_write, {"new_level": round(new_level, 4)})
+    
+    return round(new_level, 4)

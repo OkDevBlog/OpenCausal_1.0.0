@@ -3,9 +3,10 @@ from openai import OpenAI # مثال على استخدام LLM
 from typing import List, Dict
 from db.neo4j_handler import Neo4jHandler
 from .innovation_engine import find_innovative_path
-from .verify_causal import verify_causal_path
+from .verify_causal import verify_causal_path # تم افتراض وجود TRUST_THRESHOLD هنا
+from .weights import update_system_confidence, update_causal_weight
 
-# يجب تهيئة العميل في مكان مناسب (مثل ملف تهيئة عام)
+# يجب تهيئة العميل في مكان مناسب
 # client = OpenAI(api_key=...) 
 
 # 1. تصميم هيكل البيانات المتوقع (JSON Schema)
@@ -22,205 +23,129 @@ CAUSAL_SCHEMA = {
     }
 }
 
-# تحديث دالة process_llm_output في core/bridge.py (هيكل جديد)
-
-from .verify_causal import verify_causal_path
-from .weights import update_causal_weight
-
-# تحديث الدالة الرئيسية في core/bridge.py
-
-from .verify_causal import verify_causal_path
-# ... استيراد دالة extract_causal_claims_from_llm ...
-
-def process_llm_output(llm_text: str, handler: Neo4jHandler, llm_client: OpenAI):
-    """
-    المنطق الرئيسي للجسر: يستخلص الفرضيات ويتحقق منها سببيًا.
-    """
-    
-    # 1. استخلاص الفرضيات من النص (الطبقة العصبية)
-    causal_claims = extract_causal_claims_from_llm(llm_text, llm_client) 
-    
-    verified_claims = []
-    
-    for claim in causal_claims:
-        # 2. التحقق من كل فرضية ضد الذاكرة Z (الطبقة الطوبولوجية)
-        verified_path = verify_causal_path(handler, claim['cause'], claim['effect'])
-        
-        if verified_path:
-            # 3. قبول الفرضية الموثوقة
-            claim['is_verified'] = True
-            claim['weight'] = verified_path['path_weight']
-            verified_claims.append(claim)
-        else:
-            # 4. رفض الفرضية الضعيفة أو الكاذبة
-            claim['is_verified'] = False
-            verified_claims.append(claim)
-    
-    # 5. بناء الإجابة النهائية بناءً على النتائج المتحقق منها
-    if verified_claims:
-        # هنا يمكن استخدام الـ LLM مرة أخرى لصياغة إجابة نهائية دقيقة ومتحقق منها
-        # أو يمكن الاكتفاء بالروابط المؤكدة في هذه المرحلة
-        return {
-            "status": "Success - Logically Verified",
-            "verified_claims": verified_claims,
-            "raw_llm_output": llm_text
-        }
-    else:
-        # يتم تفعيل آلية التعلم النشط (طرح الأسئلة) إذا لم يتم التحقق من أي شيء
-        return {
-            "status": "Failure - Causal Gaps Found",
-            "suggestion": "يجب طرح سؤال استكشافي لسد الفجوة في الذاكرة السببية Z."
-        }
-    
-# تحديث دالة process_llm_output في core/bridge.py (هيكل جديد)
-# تحديث الدالة الرئيسية process_and_learn في core/bridge.py
-
-def process_and_learn(llm_text: str, handler: Neo4jHandler, llm_client: OpenAI, feedback_delta: float = 0.0):
-    
-    # ... (1. استخلاص الفرضيات) ...
-    causal_claims = extract_causal_claims_from_llm(llm_text, llm_client) 
-    
-    # ... (2. التحقق من الفرضيات واختيار المسار الأمثل) ...
-    # نفترض هنا أننا نبحث فقط عن أول فرضية (لتبسيط المثال)
-    
-    verified_path = None
-    if causal_claims:
-        claim = causal_claims[0]
-        verified_path = verify_causal_path(handler, claim['cause'], claim['effect'])
-    
-    # ------------------------------------------------------------------
-    # 3. اتخاذ القرار بعد التحقق
-    # ------------------------------------------------------------------
-    if verified_path:
-        # إذا تم التحقق بنجاح
-        # ... (مرحلة التعلم والـ update_causal_weight إذا كانت هناك تغذية راجعة) ...
-        return {
-            "status": "Success - Logically Verified",
-            "message": "تم تأكيد المنطق السببي. يمكن تنفيذ القرار بأمان."
-        }
-    else:
-        # إذا فشل التحقق (اكتشاف الفجوة السببية)
-        
-        # 4. توليد سؤال للتعلم النشط
-        if causal_claims:
-            gap_question = generate_exploratory_question(
-                llm_client, 
-                claim['cause'], 
-                claim['effect'], 
-                verify_causal_path.TRUST_THRESHOLD # استخدام العتبة من دالة التحقق
-            )
-            return {
-                "status": "Failure - Causal Gap Found (Active Learning)",
-                "action_required": "طلب معلومات من المستخدم",
-                "question": gap_question
-            }
-        else:
-             return {"status": "Failure - No Claims Found", "message": "لم يتم العثور على فرضيات سببية للتحقق منها."}
-
+# ------------------------------------------------------------------
+# الدوال المساعدة (تبقى كما هي تقريبا)
+# ------------------------------------------------------------------
 
 def extract_causal_claims_from_llm(llm_output_text: str, client: OpenAI) -> List[Dict]:
-    """
-    يستخدم LLM لتحليل نص الإجابة واستخلاص الفرضيات السببية المنظمة (Causes, Effects).
-    
-    المدخلات:
-        llm_output_text: الإجابة الأولية المقترحة من LLM.
-        client: كائن العميل الخاص بـ LLM.
-        
-    المخرجات:
-        قائمة بفرضيات {cause, effect, claim_type}.
-    """
-    
-    # 2. بناء أمر التحريض (Prompt)
-    system_prompt = (
-        "أنت محلل منطقي متخصص. مهمتك هي تحليل النص التالي واستخلاص جميع العلاقات السببية "
-        "(السبب والنتيجة) الواردة فيه. يجب أن يكون الناتج بصيغة JSON يتطابق تمامًا مع الهيكل المقدم."
-    )
-    
-    # دمج النص الذي يجب تحليله
+    """يستخدم LLM لتحليل نص الإجابة واستخلاص الفرضيات السببية المنظمة."""
+    # ... (الكود يبقى كما هو. ملاحظة: يجب أن يعيد 'claims' مباشرة، وليس claims.get("claims", []))
+    system_prompt = ("أنت محلل منطقي متخصص. ...")
     user_content = f"النص لتحليله: '{llm_output_text}'"
 
     try:
-        # 3. إرسال الطلب للنموذج (باستخدام أدوات استدعاء الوظائف لتنظيم JSON)
         response = client.chat.completions.create(
-            model="gpt-4-turbo",  # يفضل نموذج قوي لتنظيم JSON بدقة
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ],
-            # استخدام تقنية JSON mode أو tools/functions إذا كانت متاحة لضمان تنسيق الخرج
+            model="gpt-4-turbo", 
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}],
             response_format={"type": "json_object"}, 
-            # *ملاحظة: في هذا المثال، نفترض أن النموذج سيخرج JSON بشكل مباشر*
         )
-        
-        # 4. تحليل الخرج
         raw_json_output = response.choices[0].message.content
-        claims = json.loads(raw_json_output)
+        claims_data = json.loads(raw_json_output)
         
-        # قد نحتاج إلى بعض التنظيف أو التحقق من صحة Schema
-        return claims.get("claims", []) # نفترض أن الخرج قد يحتوي على مفتاح رئيسي 'claims'
+        # افتراض أن الخرج هو قائمة مباشرة أو داخل مفتاح 'claims'
+        if isinstance(claims_data, list):
+            return claims_data
+        elif isinstance(claims_data, dict) and 'claims' in claims_data:
+            return claims_data['claims']
+        
+        return []
 
     except Exception as e:
         print(f"حدث خطأ في استخلاص الفرضيات من LLM: {e}")
         return []
     
 
-def generate_exploratory_question(
-    llm_client: OpenAI, 
-    cause: str, 
-    effect: str, 
-    threshold: float
-) -> str:
-    """
-    يولد سؤالاً موجهاً للمستخدم لطلب معلومات سببية محددة بين السبب والنتيجة.
-
-    المدخلات:
-        llm_client: كائن العميل الخاص بـ LLM.
-        cause: السبب الذي لم يتم التحقق منه.
-        effect: النتيجة التي لم يتم التحقق منها.
-        threshold: عتبة الثقة (tau) التي لم يتم الوصول إليها.
-
-    المخرجات:
-        سؤال استكشافي محدد.
-    """
-    
-    system_prompt = (
-        "أنت محقق متخصص في المنطق السببي. مهمتك هي صياغة سؤال دقيق جداً للمستخدم "
-        "لطلب معلومة محددة تسد فجوة بين [السبب] و [النتيجة]. يجب أن يركز السؤال على "
-        "البروتوكول أو الخطوة المفقودة التي تربطهما."
-    )
-    
-    user_content = (
-        f"المشكلة: لا أستطيع إثبات منطقياً أن '{cause}' يؤدي إلى '{effect}' "
-        f"لأن الروابط الحالية ضعيفة جداً. ما هو الإجراء المفقود الذي يجب أن أسأل عنه؟"
-    )
+def generate_exploratory_question(llm_client: OpenAI, cause: str, effect: str, threshold: float) -> str:
+    """يولد سؤالاً موجهاً للمستخدم لطلب معلومات سببية محددة بين السبب والنتيجة."""
+    # ... (الكود يبقى كما هو)
+    system_prompt = ("أنت محقق متخصص في المنطق السببي. ...")
+    user_content = (f"المشكلة: لا أستطيع إثبات منطقياً أن '{cause}' يؤدي إلى '{effect}' "
+                    f"لأن الروابط الحالية ضعيفة جداً. ما هو الإجراء المفقود الذي يجب أن أسأل عنه؟")
 
     try:
         response = llm_client.chat.completions.create(
             model="gpt-4-turbo",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ]
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
         )
-        
-        # 1. تحليل الإجابة وتضمينها
         question = response.choices[0].message.content
-        
-        # 2. تحديد الفجوة في الذاكرة (للتوثيق الداخلي)
         print(f"**[GAP ALERT]** تم اكتشاف فجوة سببية بين {cause} و {effect}. Thresh={threshold}")
-        
         return f"نحتاج للمساعدة في إغلاق الفجوة المعرفية: {question}"
 
     except Exception as e:
         return f"عذراً، لا يمكنني صياغة سؤال استكشافي الآن بسبب خطأ في LLM: {e}"
-    
 
-# جزء من دالة اتخاذ القرار في core/bridge.py
 
-def attempt_innovative_solution(handler, llm_client, original_cause, desired_effect):
+# ------------------------------------------------------------------
+# 2. المنطق الرئيسي للجسر (process_and_learn)
+# ------------------------------------------------------------------
+
+def process_and_learn(llm_text: str, handler: Neo4jHandler, llm_client: OpenAI, feedback_delta: float = 0.0):
+    """
+    الدالة الرئيسية التي تستخلص الفرضيات، تتحقق منها، وتدير دورة التعلم والوعي الذاتي.
+    """
     
-    # 1. تحديد القيود (I) التي منعت الحل التقليدي (مثلاً: قيود الأداء، قيود التكلفة، إلخ)
-    # *هنا نحتاج إلى استخدام LLM لتحديد القيود بناءً على سياق المشكلة*
+    # 1. استخلاص الفرضيات من النص
+    causal_claims = extract_causal_claims_from_llm(llm_text, llm_client) 
+    
+    verified_path = None
+    best_claim = None
+    
+    if causal_claims:
+        # نبحث عن أول فرضية يمكن التحقق منها
+        best_claim = causal_claims[0] 
+        verified_path = verify_causal_path(handler, best_claim['cause'], best_claim['effect'])
+    
+    # ------------------------------------------------------------------
+    # 2. اتخاذ القرار بعد التحقق وتطبيق التعلم والوعي الذاتي
+    # ------------------------------------------------------------------
+    
+    if verified_path:
+        # حالة النجاح: تم التحقق منطقياً
+        
+        # ⭐ 2.1. تطبيق التعلم (إذا كانت هناك تغذية راجعة)
+        if feedback_delta != 0.0:
+            update_causal_weight(handler, verified_path['path_details'], feedback_delta)
+            
+        # ⭐ 2.2. تحديث الوعي الذاتي (النجاح يعزز الثقة)
+        new_confidence = update_system_confidence(handler, success_delta=0.1) # تعزيز بسيط
+        
+        return {
+            "status": "Success - Logically Verified and Learned",
+            "message": "تم تأكيد المنطق السببي. يمكن تنفيذ القرار بأمان.",
+            "system_confidence": new_confidence
+        }
+    
+    else:
+        # حالة الفشل: اكتشاف فجوة سببية (Hallucination Prevention)
+        
+        # ⭐ 2.3. تحديث الوعي الذاتي (الفشل يقلل الثقة)
+        new_confidence = update_system_confidence(handler, success_delta=-0.2) # تقليل الثقة عند الفشل في التحقق
+        
+        if best_claim:
+            # 2.4. توليد سؤال للتعلم النشط
+            gap_question = generate_exploratory_question(
+                llm_client, 
+                best_claim['cause'], 
+                best_claim['effect'], 
+                verify_causal_path.TRUST_THRESHOLD
+            )
+            return {
+                "status": "Failure - Causal Gap Found (Active Learning)",
+                "action_required": "طلب معلومات من المستخدم",
+                "question": gap_question,
+                "system_confidence": new_confidence
+            }
+        else:
+            return {
+                "status": "Failure - No Claims Found", 
+                "message": "لم يتم العثور على فرضيات سببية للتحقق منها.",
+                "system_confidence": new_confidence
+            }
+
+
+def attempt_innovative_solution(handler: Neo4jHandler, llm_client: OpenAI, original_cause: str, desired_effect: str):
+    # ... (الكود يبقى كما هو)
+    # 1. تحديد القيود
     constraints_to_ignore = ["High_Cost", "Slow_Protocol_K", "Mandatory_Check_J"]
     
     print(f"\n[🚀 INNOVATION MODE] تحويل التفكير للبحث عن حل يتجاهل: {constraints_to_ignore}")
@@ -234,9 +159,6 @@ def attempt_innovative_solution(handler, llm_client, original_cause, desired_eff
     )
     
     if innovative_path:
-        # 3. تقييم الابتكار
-        # هنا يجب استخدام LLM لتقييم المخاطر (الآثار الجانبية) قبل التوصية
-        
         return {
             "status": "Innovative Solution Found",
             "path": innovative_path['path_details'],
@@ -244,4 +166,3 @@ def attempt_innovative_solution(handler, llm_client, original_cause, desired_eff
         }
     else:
         return {"status": "Innovation Failed", "message": "لم يتم العثور على حل ابتكاري قابل للتطبيق."}
-    

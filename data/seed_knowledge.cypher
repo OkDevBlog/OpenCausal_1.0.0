@@ -56,3 +56,18 @@ MERGE (i2)-[:CAUSES {weight: 0.8}]->(s4_end:State {name: 'Memory Leak Contained'
 // هذا رابط زائفة: بطء الشبكة يسبب انهيار الخادم (عادة غير صحيح مباشرة)
 MERGE (s_net:State {name: 'Network Slowdown'})
 MERGE (s_net)-[:CAUSES {weight: 0.2}]->(s3)
+
+// ----------------------------------------------------------------------
+// 4. إضافة الوعي الذاتي: عقدة ثقة النظام
+// ----------------------------------------------------------------------
+
+// يتم إنشاء عقدة الوعي الذاتي مرة واحدة
+MERGE (sc:SelfAwareness {name: 'System_Confidence'})
+// إعطاء النظام ثقة أولية عالية نسبياً (0.9) في المنطق الذي تم إدخاله يدوياً.
+// هذه القيمة يجب أن تتأثر بمرور الوقت بالفشل والنجاح
+SET sc.current_level = 0.9
+
+// يتم ربط عقدة الثقة بالكيانات الرئيسية، مثلاً:
+// النظام يثق في بروتوكول تحسين الأداء
+MATCH (sc:SelfAwareness {name: 'System_Confidence'}), (i3:Intervention {name: 'Optimize Database Index'})
+MERGE (sc)-[:TRUSTS_PROCEDURE {weight: 0.9}]->(i3)
