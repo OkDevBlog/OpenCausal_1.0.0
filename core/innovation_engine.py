@@ -32,21 +32,16 @@ def find_innovative_path(
     query = f"""
     MATCH (start {{name: $start_entity}}), (target {{name: $target_goal}})
     
-    # البحث عن أي مسار (p) موجه
     MATCH p=(start)-[r:CAUSES*1..{MAX_INNOVATION_PATH_LENGTH}]->(target)
     
-    # 3. تطبيق شرط التجاهل (تعليق القوانين)
-    # نضمن أن المسار لا يمر بأي من العقد الممنوعة (القيود التي نريد تجاوزها)
     WHERE all(n IN nodes(p) WHERE NOT n.name IN $constraints_to_ignore)
     
-    # 4. تطبيق شرط الحد الأدنى للوزن (تجنب المسارات العشوائية بالكامل)
     AND all(r_edge IN relationships(p) WHERE r_edge.weight >= {MIN_W_FOR_INNOVATION})
     
     WITH 
         p, 
         reduce(w = 1.0, r IN relationships(p) | w * r.weight) AS path_weight
     
-    # إرجاع المسار الأقصر والأكثر وزناً (كفاءة)
     RETURN 
         path_weight, 
         [r IN relationships(p) | {{start: startNode(r).name, end: endNode(r).name, weight: r.weight}}] AS path_details,

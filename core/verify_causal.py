@@ -2,6 +2,7 @@ from db.neo4j_handler import Neo4jHandler
 from typing import Optional, List, Dict
 
 # عتبة الثقة (Tau): أي مسار أقل من هذا الوزن لا يُعتبر سببيًا موثوقًا به
+MAX_PATH_LENGTH = 5  # أقصى طول مسموح به للمسار السببي للتحقق
 TRUST_THRESHOLD = 0.5
 
 def verify_causal_path(
@@ -28,31 +29,27 @@ def verify_causal_path(
     # لكن للتبسيط الأولي نستخدم MATCH بسيط مع شرط الوزن.
 
     query = f"""
-    MATCH (cause {{name: $cause_name}}), (effect {{name: $effect_name}})
+    MATCH (start {{name: $cause}}), (target {{name: $effect}})
     
-    # ابحث عن المسارات بطول 1 إلى 5 روابط سببية
-    MATCH p=shortestPath((cause)-[:CAUSES*1..5]->(effect))
+    MATCH p=(start)-[r:CAUSES*1..{MAX_PATH_LENGTH}]->(target) 
     
-    # حساب قوة المسار (منتج الأوزان) - التحدي الرياضي
-    # *ملاحظة: منتج الأوزان يتم حسابه خارج Cypher لتعقيده الرياضي، لكن هنا نتحقق من الشروط الأساسية:*
-    
+    WHERE all(r_edge IN relationships(p) WHERE r_edge.weight >= {TRUST_THRESHOLD})
+
     WITH 
         p, 
         reduce(w = 1.0, r IN relationships(p) | w * r.weight) AS path_weight
     
-    # شرط القبول: يجب أن يكون الوزن الإجمالي للمسار أعلى من عتبة الثقة (tau)
-    WHERE path_weight >= $threshold
-    
     RETURN 
         path_weight, 
-        [r IN relationships(p) | {{start: startNode(r).name, end: endNode(r).name, weight: r.weight}}] AS path_details
+        [r IN relationships(p) | {{start: startNode(r).name, end: endNode(r).name, weight: r.weight}}] AS path_details,
+        length(p) AS path_length
     ORDER BY path_weight DESC 
     LIMIT 1
     """
 
     parameters = {
-        "cause_name": cause_name,
-        "effect_name": effect_name,
+        "cause": cause_name,
+        "effect": effect_name,
         "threshold": threshold
     }
     

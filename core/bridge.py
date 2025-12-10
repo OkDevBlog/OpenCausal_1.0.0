@@ -3,7 +3,7 @@ from openai import OpenAI # مثال على استخدام LLM
 from typing import List, Dict
 from db.neo4j_handler import Neo4jHandler
 from .innovation_engine import find_innovative_path
-from .verify_causal import verify_causal_path # تم افتراض وجود TRUST_THRESHOLD هنا
+from .verify_causal import verify_causal_path, TRUST_THRESHOLD 
 from .weights import update_system_confidence, update_causal_weight
 
 # يجب تهيئة العميل في مكان مناسب
@@ -29,8 +29,11 @@ CAUSAL_SCHEMA = {
 
 def extract_causal_claims_from_llm(llm_output_text: str, client: OpenAI) -> List[Dict]:
     """يستخدم LLM لتحليل نص الإجابة واستخلاص الفرضيات السببية المنظمة."""
-    # ... (الكود يبقى كما هو. ملاحظة: يجب أن يعيد 'claims' مباشرة، وليس claims.get("claims", []))
-    system_prompt = ("أنت محلل منطقي متخصص. ...")
+    
+    system_prompt = (
+        "أنت محلل منطقي متخصص. مهمتك هي استخراج العلاقات السببية (cause -> effect) "
+        "من النص المُقدم. يجب أن يكون الخرج **بصيغة JSON** يتوافق مع مخطط CAUSAL_SCHEMA." # ⭐ تم إضافة كلمة JSON
+    )
     user_content = f"النص لتحليله: '{llm_output_text}'"
 
     try:
@@ -42,11 +45,11 @@ def extract_causal_claims_from_llm(llm_output_text: str, client: OpenAI) -> List
         raw_json_output = response.choices[0].message.content
         claims_data = json.loads(raw_json_output)
         
-        # افتراض أن الخرج هو قائمة مباشرة أو داخل مفتاح 'claims'
+        # ⭐ هذا الجزء حاسم: تأكد من أن الدالة ترجع القائمة، حتى لو كانت مغلفة بمفتاح
         if isinstance(claims_data, list):
             return claims_data
-        elif isinstance(claims_data, dict) and 'claims' in claims_data:
-            return claims_data['claims']
+        elif isinstance(claims_data, dict) and 'causal_claims' in claims_data: # ⭐ قد تحتاج لاستبدال 'claims' بـ 'causal_claims'
+            return claims_data['causal_claims']
         
         return []
 
@@ -127,7 +130,7 @@ def process_and_learn(llm_text: str, handler: Neo4jHandler, llm_client: OpenAI, 
                 llm_client, 
                 best_claim['cause'], 
                 best_claim['effect'], 
-                verify_causal_path.TRUST_THRESHOLD
+                TRUST_THRESHOLD
             )
             return {
                 "status": "Failure - Causal Gap Found (Active Learning)",
@@ -163,7 +166,7 @@ def assess_innovative_risk(llm_client: OpenAI, path_details: List[Dict]) -> Dict
         "أنت خبير في تحليل المخاطر. تم اقتراح مسار سببي جديد (ابتكاري) يتجاوز "
         "بعض القيود التقليدية. قم بتحليل المسار المقدم وتقييم الآثار الجانبية غير المرغوب فيها "
         "ومخاطر التنفيذ على مقياس من 0 (مخاطرة معدومة) إلى 1.0 (خطر شديد). "
-        "يجب أن يكون الخرج بصيغة JSON."
+        "يجب أن يكون الخرج بصيغة **JSON** بالبنية التالية: {'risk_score': float, 'side_effects': str}."
     )
     
     user_content = (
@@ -232,5 +235,4 @@ def attempt_innovative_solution(handler: Neo4jHandler, llm_client: OpenAI, origi
         }
     else:
         return {"status": "Innovation Failed", "message": "لم يتم العثور على حل ابتكاري قابل للتطبيق."}
-    
     
