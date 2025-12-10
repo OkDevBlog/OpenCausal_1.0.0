@@ -2,6 +2,8 @@ import json
 from openai import OpenAI # مثال على استخدام LLM
 from typing import List, Dict
 from db.neo4j_handler import Neo4jHandler
+from .innovation_engine import find_innovative_path
+from .verify_causal import verify_causal_path
 
 # يجب تهيئة العميل في مكان مناسب (مثل ملف تهيئة عام)
 # client = OpenAI(api_key=...) 
@@ -242,3 +244,4 @@ def attempt_innovative_solution(handler, llm_client, original_cause, desired_eff
         }
     else:
         return {"status": "Innovation Failed", "message": "لم يتم العثور على حل ابتكاري قابل للتطبيق."}
+    
