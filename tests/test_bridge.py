@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 from core.verify_causal import verify_causal_path, TRUST_THRESHOLD
 from core.weights import update_causal_weight
-from core.bridge import process_and_learn
+from core.bridge import process_and_learn, attempt_innovative_solution
 
 # ----------------------------------------------------------------------
 # 1. إعداد البيانات الوهمية (Mock Data)
@@ -20,8 +20,31 @@ SUCCESS_PATH_RESPONSE = [
 
 FAILURE_PATH_RESPONSE = [] 
 
+# ... (بعد تعريف FAILURE_PATH_RESPONSE)
+
+# بيانات وهمية للمسار الابتكاري
+INNOVATIVE_PATH_RESPONSE = {
+    "path_weight": 0.95,
+    "path_details": [
+        {"start": "Memory Leak", "end": "Fast Patch", "weight": 0.95},
+        {"start": "Fast Patch", "end": "Server Crash", "weight": 0.95}
+    ]
+}
+
+# بيانات وهمية لتقييم المخاطر (مخاطر منخفضة < 0.7)
+LOW_RISK_ASSESSMENT_RESPONSE = {
+    "risk_score": 0.3,
+    "side_effects": "Minor performance degradation during initial deployment."
+}
+
+# بيانات وهمية لتقييم المخاطر (مخاطر عالية > 0.7)
+HIGH_RISK_ASSESSMENT_RESPONSE = {
+    "risk_score": 0.85, 
+    "side_effects": "High probability of data corruption due to bypassing security check."
+}
+
 # ----------------------------------------------------------------------
-# 2. فئة الاختبار
+# 2. فئة الاختبار (TestCausalBridge)
 # ----------------------------------------------------------------------
 
 class TestCausalBridge(unittest.TestCase):
@@ -92,6 +115,47 @@ class TestCausalBridge(unittest.TestCase):
         self.assertEqual(result['status'], "Failure - Causal Gap Found (Active Learning)")
         mock_generate.assert_called_once()
         self.assertIn("المفقودة", result['question'])
+
+    # =========================================================
+    # 5. اختبار الابتكار وتحليل المخاطر (Innovation and Risk Test)
+    # =========================================================
+    
+    @patch('core.bridge.find_innovative_path')
+    @patch('core.bridge.assess_innovative_risk')
+    def test_05_innovative_solution_low_risk(self, mock_assess_risk, mock_find_path):
+        """يجب أن يقبل النظام الحل الابتكاري إذا كانت مخاطره منخفضة."""
+        
+        # 1. إعداد محاكاة لإيجاد المسار بنجاح
+        mock_find_path.return_value = INNOVATIVE_PATH_RESPONSE
+        
+        # 2. إعداد محاكاة لتقييم المخاطر (مخاطر منخفضة < 0.7)
+        mock_assess_risk.return_value = LOW_RISK_ASSESSMENT_RESPONSE
+        
+        result = attempt_innovative_solution(self.mock_handler, self.mock_llm_client, "Memory Leak", "Server Crash")
+        
+        self.assertEqual(result['status'], "Innovative Solution Found")
+        self.assertLess(result['risk_assessment']['risk_score'], 0.7)
+        mock_assess_risk.assert_called_once()
+        mock_find_path.assert_called_once()
+
+
+    @patch('core.bridge.find_innovative_path')
+    @patch('core.bridge.assess_innovative_risk')
+    def test_06_innovative_solution_high_risk(self, mock_assess_risk, mock_find_path):
+        """يجب أن يرفض النظام الحل الابتكاري إذا كانت مخاطره عالية (> 0.7)."""
+        
+        # 1. إعداد محاكاة لإيجاد المسار بنجاح
+        mock_find_path.return_value = INNOVATIVE_PATH_RESPONSE
+        
+        # 2. إعداد محاكاة لتقييم المخاطر (مخاطر عالية > 0.7)
+        mock_assess_risk.return_value = HIGH_RISK_ASSESSMENT_RESPONSE
+        
+        result = attempt_innovative_solution(self.mock_handler, self.mock_llm_client, "Memory Leak", "Server Crash")
+        
+        self.assertEqual(result['status'], "Innovative Solution REJECTED")
+        self.assertIn("ارتفاع المخاطر", result['message'])
+        mock_assess_risk.assert_called_once()
+        mock_find_path.assert_called_once()
 
 if __name__ == '__main__':
     unittest.main()

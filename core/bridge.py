@@ -143,9 +143,61 @@ def process_and_learn(llm_text: str, handler: Neo4jHandler, llm_client: OpenAI, 
             }
 
 
+# في core/bridge.py (دالة جديدة)
+
+def assess_innovative_risk(llm_client: OpenAI, path_details: List[Dict]) -> Dict:
+    """
+    تقييم مخاطر المسار الابتكاري المقترح باستخدام LLM.
+
+    المدخلات:
+        llm_client: كائن العميل الخاص بـ LLM.
+        path_details: تفاصيل المسار الابتكاري (الروابط الجديدة/المُتجاهلة).
+        
+    المخرجات:
+        قاموس يحتوي على تقييم المخاطر (Risk Score, Side Effects).
+    """
+    
+    path_summary = "\n".join([f"- {e['start']} -> {e['end']} (Weight: {e.get('weight', 'NEW')})" for e in path_details])
+    
+    system_prompt = (
+        "أنت خبير في تحليل المخاطر. تم اقتراح مسار سببي جديد (ابتكاري) يتجاوز "
+        "بعض القيود التقليدية. قم بتحليل المسار المقدم وتقييم الآثار الجانبية غير المرغوب فيها "
+        "ومخاطر التنفيذ على مقياس من 0 (مخاطرة معدومة) إلى 1.0 (خطر شديد). "
+        "يجب أن يكون الخرج بصيغة JSON."
+    )
+    
+    user_content = (
+        f"المسار الابتكاري المقترح (الروابط): \n{path_summary}\n"
+        f"ما هي المخاطر والآثار الجانبية غير المتوقعة (مثل: زيادة في التكلفة، تدهور الأداء)؟"
+    )
+
+    try:
+        # استخدام LLM لتحليل المخاطر وصياغة الخرج كـ JSON
+        response = llm_client.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}],
+            response_format={"type": "json_object"},
+        )
+        
+        raw_json = response.choices[0].message.content
+        risk_data = json.loads(raw_json)
+        
+        # يجب أن يتوقع الـ Schema مفتاحين رئيسيين: risk_score و side_effects
+        return {
+            "risk_score": risk_data.get('risk_score', 0.5), # قيمة افتراضية
+            "side_effects": risk_data.get('side_effects', "لم يتم تحديد آثار جانبية واضحة.")
+        }
+    
+    except Exception as e:
+        print(f"حدث خطأ في تقييم المخاطر عبر LLM: {e}")
+        return {"risk_score": 1.0, "side_effects": "فشل تقييم المخاطر، يجب رفض الحل."}
+    
+
+# في core/bridge.py (تعديل دالة attempt_innovative_solution)
+
 def attempt_innovative_solution(handler: Neo4jHandler, llm_client: OpenAI, original_cause: str, desired_effect: str):
-    # ... (الكود يبقى كما هو)
-    # 1. تحديد القيود
+    
+    # 1. تحديد القيود (I) التي منعت الحل التقليدي
     constraints_to_ignore = ["High_Cost", "Slow_Protocol_K", "Mandatory_Check_J"]
     
     print(f"\n[🚀 INNOVATION MODE] تحويل التفكير للبحث عن حل يتجاهل: {constraints_to_ignore}")
@@ -159,10 +211,26 @@ def attempt_innovative_solution(handler: Neo4jHandler, llm_client: OpenAI, origi
     )
     
     if innovative_path:
+        # ⭐ 3. تحليل المخاطر (الخطوة الجديدة)
+        risk_assessment = assess_innovative_risk(llm_client, innovative_path['path_details'])
+        
+        risk_score = risk_assessment['risk_score']
+        
+        if risk_score > 0.7:
+            # رفض الحل إذا كانت المخاطر عالية جداً
+            return {
+                "status": "Innovative Solution REJECTED",
+                "message": f"تم رفض الحل الابتكاري بسبب ارتفاع المخاطر (Risk Score: {risk_score}).",
+                "risk_details": risk_assessment['side_effects']
+            }
+        
+        # 4. قبول الحل إذا كانت المخاطر مقبولة
         return {
             "status": "Innovative Solution Found",
             "path": innovative_path['path_details'],
-            "risk_assessment": "مطلوب تحليل مخاطر عاجل."
+            "risk_assessment": risk_assessment # تضمين التقييم الكامل
         }
     else:
         return {"status": "Innovation Failed", "message": "لم يتم العثور على حل ابتكاري قابل للتطبيق."}
+    
+    
