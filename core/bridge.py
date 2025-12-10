@@ -211,3 +211,34 @@ def generate_exploratory_question(
 
     except Exception as e:
         return f"عذراً، لا يمكنني صياغة سؤال استكشافي الآن بسبب خطأ في LLM: {e}"
+    
+
+# جزء من دالة اتخاذ القرار في core/bridge.py
+
+def attempt_innovative_solution(handler, llm_client, original_cause, desired_effect):
+    
+    # 1. تحديد القيود (I) التي منعت الحل التقليدي (مثلاً: قيود الأداء، قيود التكلفة، إلخ)
+    # *هنا نحتاج إلى استخدام LLM لتحديد القيود بناءً على سياق المشكلة*
+    constraints_to_ignore = ["High_Cost", "Slow_Protocol_K", "Mandatory_Check_J"]
+    
+    print(f"\n[🚀 INNOVATION MODE] تحويل التفكير للبحث عن حل يتجاهل: {constraints_to_ignore}")
+    
+    # 2. تطبيق مشغل imagine(I)
+    innovative_path = find_innovative_path(
+        handler,
+        start_entity=original_cause,
+        target_goal=desired_effect,
+        constraints_to_ignore=constraints_to_ignore
+    )
+    
+    if innovative_path:
+        # 3. تقييم الابتكار
+        # هنا يجب استخدام LLM لتقييم المخاطر (الآثار الجانبية) قبل التوصية
+        
+        return {
+            "status": "Innovative Solution Found",
+            "path": innovative_path['path_details'],
+            "risk_assessment": "مطلوب تحليل مخاطر عاجل."
+        }
+    else:
+        return {"status": "Innovation Failed", "message": "لم يتم العثور على حل ابتكاري قابل للتطبيق."}
