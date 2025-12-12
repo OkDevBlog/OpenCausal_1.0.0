@@ -9,7 +9,7 @@ def verify_causal_path(
     handler: Neo4jHandler, 
     cause_name: str, 
     effect_name: str, 
-    threshold: float = TRUST_THRESHOLD
+    threshold: float = TRUST_THRESHOLD # القيمة الافتراضية 0.5
 ) -> Optional[Dict]:
     """
     يبحث عن أقوى مسار سببي موجه وموزون بين سبب ونتيجة في الذاكرة Z.
@@ -33,7 +33,7 @@ def verify_causal_path(
     
     MATCH p=(start)-[r:CAUSES*1..{MAX_PATH_LENGTH}]->(target) 
     
-    WHERE all(r_edge IN relationships(p) WHERE r_edge.weight >= {TRUST_THRESHOLD})
+    WHERE all(r_edge IN relationships(p) WHERE r_edge.weight >= $threshold)
 
     WITH 
         p, 
